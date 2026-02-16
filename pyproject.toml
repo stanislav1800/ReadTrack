@@ -1,0 +1,110 @@
+[project]
+name = "aiogram-base-template"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.24.0",
+    "aiogram-dialog>=2.4.0",
+    "alembic>=1.18.4",
+    "asyncio-redis>=0.16.0",
+    "psycopg2-binary>=2.9.11",
+    "pydantic-settings>=2.12.0",
+    "python-json-logger>=4.0.0",
+    "pytz>=2025.2",
+    "redis>=7.1.0",
+    "sqlalchemy>=2.0.46",
+    "tortoise-orm[asyncpg]>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
+    "ruff>=0.15.1",
+    "types-pytz>=2025.2.0.20251108",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = ["migrations", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = [
+    "F401"
+]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = [
+    "A",   # flake8-builtins
+    "B",   # flake8-bugbear
+    "C",   # flake8-comprehensions
+    "D",   # pydocstyle
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "G",   # flake8-logging-format
+    "I",   # isort
+    "N",   # pep8-naming
+    "Q",   # flake8-quotes
+    "S",   # flake8-bandit
+    "T",   # flake8-print
+    "W",   # pycodestyle warnings
+    "ANN", # flake8-annotations
+    "ARG", # flake8-unused-arguments
+    "BLE", # flake8-blind-except
+    "COM", # flake8-commas
+    "DJ",  # flake8-django
+    "DTZ", # flake8-datetimez
+    "EM",  # flake8-errmsg
+    "ERA", # eradicate
+    "EXE", # flake8-executable
+    "FBT", # flake8-boolean-trap
+    "ICN", # flake8-import-conventions
+    "INP", # flake8-no-pep420
+    "ISC", # flake8-implicit-str-concat
+    "NPY", # NumPy-specific rules
+    "PD",  # pandas-vet
+    "PGH", # pygrep-hooks
+    "PIE", # flake8-pie
+    "PL",  # Pylint
+    "PT",  # flake8-pytest-style
+    "PTH", # flake8-use-pathlib
+    "PYI", # flake8-pyi
+    "RET", # flake8-return
+    "RSE", # flake8-raise
+    "RUF", # Ruff-specific rules
+    "SIM", # flake8-simplify
+    "SLF", # flake8-self
+    "TID", # flake8-tidy-imports
+    "TRY", # tryceratops
+    "UP",  # pyupgrade
+    "YTT", # flake8-2020
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+
+[tool.mypy]
+files = ["src", "tests"]
+plugins = [
+    "pydantic.mypy"
+]
+python_version = 3.12
+warn_unused_configs = true
+ignore_missing_imports = true
+strict = true
+follow_imports = "silent"
+show_error_codes = true
+
+[tool.alembic]
+script_location = "migrations"
+sqlalchemy.url = "driver://user:pass@localhost/dbname"
+
+[tool.isort]
+profile = "black"

@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.15.1
+    hooks:
+      - id: ruff
+        args:
+          - --fix
+        additional_dependencies:
+          - ruff[mypy]
+        files: ^src/|^tests/
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        args:
+          - --ignore-missing-imports
+        additional_dependencies:
+          - aiogram
+          - sqlalchemy[mypy]
+          - pydantic
+        files: ^src/|^tests/
