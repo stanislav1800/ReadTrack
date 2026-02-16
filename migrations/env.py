@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from src.users.database.models import Users
+from src.book_tracking.database.models import Books, UserBook, BookTag, Tag
 from src.database.base import Base
 from src.core.config import settings
 

@@ -1,11 +1,16 @@
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, Boolean, DateTime, String, func, true
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.config import settings
 from src.database.base import Base
+
+if TYPE_CHECKING:
+    from src.book_tracking.database.models import UserBook
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +64,10 @@ class Users(Base):
         server_default=func.now(),
         onupdate=func.now(),
         comment="Когда профиль в последний раз обновлялся",
+    )
+
+    books: Mapped[list["UserBook"]] = relationship(
+        "UserBook", back_populates="user"
     )
 
     def __str__(self):
