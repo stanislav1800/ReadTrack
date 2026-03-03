@@ -9,6 +9,7 @@ from aiogram.fsm.storage.redis import DefaultKeyBuilder, RedisStorage
 from aiogram_dialog import setup_dialogs
 from aiohttp import BasicAuth
 
+from src import book_tracking, users
 from src.core.config import settings
 from src.core.infrastructure.redis_client import get_redis
 from src.core.middleware import (
@@ -18,7 +19,6 @@ from src.core.middleware import (
     UserBlockMiddleware,
     VerificationMiddleware,
 )
-from src.users.router import router as users_router
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,8 @@ def create_dispatcher() -> Dispatcher:
 
 def setup_routers(dp: Dispatcher) -> Dispatcher:
     dp.include_routers(
-        users_router,
+        users.router,
+        book_tracking.router,
     )
 
 

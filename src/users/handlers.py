@@ -28,15 +28,15 @@ async def admin_cmd_start(
             await dialog_manager.start(states.ListUsers.user_info, data={"user_id": int(user_id)})
 
 
-@router.message(CommandStart())
-async def cmd_start(
-    message: Message,
-    dialog_manager: DialogManager,
-    command: CommandObject,
-    current_user: UserSchema,
-):
-    logger.info("user")
-    logger.info(current_user.__dict__)
+# @router.message(CommandStart())
+# async def cmd_start(
+#     message: Message,
+#     dialog_manager: DialogManager,
+#     command: CommandObject,
+#     current_user: UserSchema,
+# ):
+#     logger.info("user")
+#     logger.info(current_user.__dict__)
 
 
 @router.message(Command("test_error"))

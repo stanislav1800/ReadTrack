@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: Optional[str] = None
 
+    # OpenAPI
+    open_api_key: str
+    model: str
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     def get_db_url(self) -> str:

@@ -1,10 +1,10 @@
+import enum
 import logging
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, func, true, Text, Integer, Enum, ForeignKey
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-import enum
 
 from src.core.config import settings
 from src.database.base import Base
@@ -70,7 +70,7 @@ class UserBook(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, 
+        BigInteger, 
         ForeignKey("users.id"), 
         nullable=False,
         comment="Пользователь",
@@ -89,21 +89,24 @@ class UserBook(Base):
     )
     minutes_read: Mapped[Optional[int]] = mapped_column(
         Integer,
+        nullable=True,
         comment="Сколько минут/времени потрачено",
     )
     created_at: Mapped[int] = mapped_column(
         DateTime(timezone=True), 
         server_default=func.now(),
+        nullable=False,
         comment="Дата добавления книги в трекер",
     )
     updated_at: Mapped[int] = mapped_column(
-        DateTime(timezone=True), 
+        DateTime(timezone=True),
         onupdate=func.now(),
+        nullable=True,
         comment="Последнее обновление статуса",
     )
 
     user: Mapped["Users"] = relationship("Users", back_populates="books")
-    book: Mapped["Books"] = relationship("Book", back_populates="user_associations")
+    book: Mapped["Books"] = relationship("Books", back_populates="user_associations")
 
 class Tag(Base):
     __tablename__ = "tag"
@@ -140,5 +143,5 @@ class BookTag(Base):
         comment="Ссылка на тег",
     )
 
-    book: Mapped["Books"] = relationship("Book", back_populates="tags")
+    book: Mapped["Books"] = relationship("Books", back_populates="tags")
     tag: Mapped["Tag"] = relationship("Tag", back_populates="book_associations")

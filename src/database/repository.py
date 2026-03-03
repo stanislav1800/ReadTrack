@@ -1,52 +1,54 @@
-import abc
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 ModelType = TypeVar("ModelType")
-ModelSchemasType = TypeVar("ModelSchemasType")
-KeyType = TypeVar("KeyType")
+SchemaType = TypeVar("SchemaType")
 
 
-class AbstractRepository(abc.ABC, Generic[ModelType, KeyType]):
+class AbstractRepository(ABC, Generic[ModelType, SchemaType]):
     model: type[ModelType]
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    @abc.abstractmethod
-    async def add(self, data: dict[str, Any]) -> ModelSchemasType:
-        raise NotImplementedError
+    @abstractmethod
+    async def add(self, data: dict[str, Any]) -> SchemaType:
+        """Создать запись и вернуть схему"""
+        ...
 
-    @abc.abstractmethod
-    async def get(self, key: KeyType) -> ModelSchemasType | None:
-        raise NotImplementedError
+    @abstractmethod
+    async def get(self, id: Any) -> SchemaType | None:
+        """Получить по первичному ключу"""
+        ...
 
-    @abc.abstractmethod
-    async def update(self, key: KeyType, data: dict[str, Any]) -> ModelSchemasType | None:
-        raise NotImplementedError
+    # @abstractmethod
+    # async def get_one_or_none(self, **filters: Any) -> SchemaType | None:
+    #     """Получить одну запись или None по фильтрам"""
+    #     ...
 
-    @abc.abstractmethod
-    async def delete(self, **filters: Any) -> None:
-        raise NotImplementedError
+    # @abstractmethod
+    # async def list(self, **filters: Any) -> Sequence[SchemaType]:
+    #     """Список записей по фильтрам"""
+    #     ...
 
-    @abc.abstractmethod
-    async def get_by_filters(self, **filters: Any) -> ModelSchemasType | None:
-        raise NotImplementedError
+    # @abstractmethod
+    # async def exists(self, **filters: Any) -> bool:
+    #     """Существует ли хотя бы одна запись"""
+    #     ...
 
-    @abc.abstractmethod
-    async def update_by_filters(
+    async def get_or_create(
         self,
-        filters: dict[str, Any],
-        data: dict[str, Any],
-    ) -> Sequence[ModelType]:
-        raise NotImplementedError
+        defaults: dict[str, Any] | None = None,
+        **filters: Any
+    ) -> tuple[SchemaType, bool]:
+        """Аналог get_or_create из Django ORM"""
+        existing = await self.get_one_or_none(**filters)
+        if existing:
+            return existing, False
 
-    @abc.abstractmethod
-    async def delete_by_filters(self, **filters: Any) -> None:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    async def list_by_filters(self, **filters: Any) -> Sequence[ModelType]:
-        raise NotImplementedError
+        data = {**filters, **(defaults or {})}
+        created = await self.add(data)
+        return created, True

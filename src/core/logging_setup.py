@@ -1,12 +1,14 @@
 import logging.config
+import logging.handlers
 import os
+import traceback
 from pathlib import Path
 
 from src.core.config import settings
 
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-log_file = os.path.join(LOG_DIR, "app.log")
+log_file = LOG_DIR / "app.log"
 
 LOG_LEVEL = settings.log_level.upper()
 
@@ -35,14 +37,14 @@ LOGGING_CONFIG = {
         "file_handler": {
             "formatter": "standard",
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": log_file,
+            "filename": str(log_file),
             "maxBytes": 1024 * 1024 * 10,  # = 10MB
             "backupCount": 3,
         },
         "file_handler_json": {
             "formatter": "json",
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": log_file,
+            "filename": str(log_file),
             "maxBytes": 1024 * 1024 * 10,  # = 10MB
             "backupCount": 3,
         },
@@ -56,4 +58,7 @@ LOGGING_CONFIG = {
     },
 }
 
-logging.config.dictConfig(LOGGING_CONFIG)
+try:
+    logging.config.dictConfig(LOGGING_CONFIG)
+except Exception:
+    traceback.print_exc()
