@@ -4,6 +4,7 @@ from aiogram import Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 from aiogram_dialog import DialogManager, StartMode
+from aiogram.fsm.context import FSMContext
 
 from src.book_tracking import states
 from src.users.database.schemas import UserSchema
@@ -18,5 +19,7 @@ async def users_cmd_start(
     dialog_manager: DialogManager,
     command: CommandObject,
     current_user: UserSchema,
+    state: FSMContext,
 ):
+    await state.clear()
     await dialog_manager.start(states.ReadTracker.main, mode=StartMode.RESET_STACK)

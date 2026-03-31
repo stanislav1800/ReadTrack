@@ -4,7 +4,21 @@ from aiogram.fsm.state import State, StatesGroup
 class ReadTracker(StatesGroup):
     main = State()
 
-class SearchBooks(StatesGroup):
+class ListBooks(StatesGroup):
+    list_books = State()
+    book_detail = State()
+    search_books = State()
+
+class CreateBook(StatesGroup):
+    title = State()
+    author = State()
+    description = State()
+    published_year = State()
+    minutes_read = State()
+    tags = State()
+    detail = State()
+
+class AISearchBooks(StatesGroup):
     input_request = State()
     list_books = State()
     book_detail = State()
