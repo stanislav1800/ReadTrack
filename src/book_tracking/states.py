@@ -27,3 +27,4 @@ class MyBooks(StatesGroup):
     list_books = State()
     search = State()
     book_detail = State()
+    update_minutes_read = State()

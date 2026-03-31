@@ -27,6 +27,13 @@ class ReadingStatus(enum.Enum):
     reading = "reading"
     read = "read"
 
+    def label(self) -> str:
+        return {
+            ReadingStatus.planned: "Запланировано",
+            ReadingStatus.reading: "Читаю",
+            ReadingStatus.read: "Прочитано",
+        }[self]
+
 class BookStatus(enum.Enum):
     UNVERIFIED = "unverified"
     VERIFIED = "verified"

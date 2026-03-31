@@ -1,6 +1,8 @@
 from aiogram import Router
+from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, Window, StartMode
 from aiogram_dialog.widgets.input import TextInput
+from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.kbd import (
     Back,
     Button,
@@ -16,11 +18,13 @@ from aiogram_dialog.widgets.kbd import (
     Start,
     SwitchTo,
     Toggle,
+    Radio,
 )
 from aiogram_dialog.widgets.text import Const, Format, Jinja
 from magic_filter import F
 
 from src.book_tracking import states
+from src.book_tracking.database.models import ReadingStatus
 from src.core.config import settings
 
 from .getters import (
@@ -44,6 +48,9 @@ from .handlers import (
     on_check_update_book,
     on_start_update_book,
     on_error_data_not_int,
+    on_change_reading_status,
+    on_update_minutes_read,
+    on_delete_my_book,
 )
 
 main = Dialog(
@@ -117,7 +124,7 @@ list_books_dialog = Dialog(
         Column(
             Button(Const("Добавить в список"), id="add_to_list", on_click=on_add_to_list, when=~F["is_my_book"]),
             Button(Const("Перейти к книге"), id="start_book_detail", on_click=on_start_book_detail, when=F["is_my_book"]),
-            SwitchTo(Const("Назад"), id="back", state=states.ListBooks.list_books),
+            Back(Const("Назад")),
         ),
         getter=get_book,
         state=states.ListBooks.book_detail,
@@ -128,7 +135,7 @@ list_books_dialog = Dialog(
         TextInput("search_book", on_success=on_search_success),
         Button(Const("Отменить фильтр"), id="cancel_filter", on_click=on_cancel_filter),
         state=states.ListBooks.search_books,
-    )
+    ),
 )
 
 
@@ -302,14 +309,14 @@ create_book_dialog = Dialog(
 # )
 
 
-my_books = Dialog(
+my_books_dialog = Dialog(
     Window(
-        Const("Список ваших книг:"),
+        Const("Список ваших книг:.............................................."),
         ScrollingGroup(
             Select(
-                Format("{item.book.title}"),
+                Format("{item.title}"),
                 id="s_book_id",
-                item_id_getter=lambda x: x.book.id,
+                item_id_getter=lambda x: x.id,
                 items="books",
                 on_click=on_book_selected,
             ),
@@ -324,13 +331,14 @@ my_books = Dialog(
                 text=Const("<<"),
                 when=lambda data, widget, manager: data["current_page"] > 0,
             ),
+            SwitchTo(Const("🔎"), id="search", state=states.MyBooks.search),
             NextPage(
                 scroll="scrolling_list_books",
                 text=Const(">>"),
                 when=lambda data, widget, manager: data["current_page"] < data["pages"] - 1,
             ),
         ),
-        Cancel(Const("Выйти в главное меню")),
+        Start(Const("Отмена"), "__start__", state=states.ReadTracker.main, mode=StartMode.RESET_STACK),
         getter=get_my_list_books,
         state=states.MyBooks.list_books
     ),
@@ -345,27 +353,51 @@ my_books = Dialog(
 📝 <b>Описание:</b>
 {{ book.description }}
 
-⏱ <b>Время чтения:</b>
+⏱ <b>Предварительное время чтения:</b>
 {% if book.minutes_read %}
     {{ book.minutes_read }} мин.
 {% else %}
     Пока не указано
 {% endif %}
+
+⏱ <b>Мое время чтения:</b>
+{% if user_books.minutes_read %}
+    {{ user_books.minutes_read }} мин.
+{% else %}
+    Пока не указано
+{% endif %}
+
 """
         ),
-        # Toggle(
-        #     Format("{item.emoji} {item.name}"),
-        #     id="toggle_change_status",
-        #     items="book_status",
-        #     item_id_getter=lambda x: x.id,
-        #     on_click=on_status_toggle,
-        # ),
-        # Button(Const("Удалить"), id=""),
+        Radio(
+            Format("{item[1]}"),
+            Format("{item[1]}"),
+            id="r_reading_status",
+            item_id_getter=lambda x: x[0].value,
+            items=lambda data: [(s, s.label()) for s in ReadingStatus],
+            on_click=on_change_reading_status,
+            checked_style=Style(style=ButtonStyle.SUCCESS),
+            # unchecked_style=Style(style=ButtonStyle.PRIMARY),
+        ),
+        SwitchTo(Const("Изменить время прочтения"), id="update_minutes_read", state=states.MyBooks.update_minutes_read),
+        Button(Const("Удалить"), id="delete", on_click=on_delete_my_book, style=Style(style=ButtonStyle.DANGER),
+),
         Back(Const("Назад")),
         state=states.MyBooks.book_detail,
         getter=get_book,
         parse_mode="html",
-    )
+    ),
+    Window(
+        Const("Введите время чтения в минутах:"),
+        TextInput("minutes_read", on_success=on_update_minutes_read, type_factory=int, on_error=on_error_data_not_int),
+        state=states.MyBooks.update_minutes_read
+    ),
+    Window(
+        Const("Введите название книги или автора, которую хотите найти:"),
+        TextInput("search_book", on_success=on_search_success),
+        Button(Const("Отменить фильтр"), id="cancel_filter", on_click=on_cancel_filter),
+        state=states.MyBooks.search,
+    ),
 )
 
 
@@ -374,4 +406,4 @@ router = Router(name=__name__)
 router.include_router(main)
 router.include_router(list_books_dialog)
 router.include_router(create_book_dialog)
-router.include_router(my_books)
+router.include_router(my_books_dialog)

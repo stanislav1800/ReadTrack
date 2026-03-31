@@ -32,18 +32,21 @@ class BookStatusItem:
 
 async def get_my_list_books(dialog_manager: DialogManager, **kwargs) -> dict[str, Any]:
     current_user: Users | None = dialog_manager.middleware_data.get("current_user")
+    query = dialog_manager.dialog_data.get("search_query")
 
     async with BookUnitOfWork(async_session_maker) as uow:
-        user_books = await uow.user_book.get_by_filter(user_id=current_user.id)
+        user_books = await uow.book.get_by_filter(query=query, user_id=current_user.id)
 
     return {"books": user_books}
 
 
 async def get_list_books(dialog_manager: DialogManager, **kwargs):
-    # m_select: ManagedScroll = dialog_manager.find("scrolling_list_books")
-    # logger.info(m_select)
-    # logger.info(m_select.__dict__)
-    # m_select.set_page()
+    logger.info(dialog_manager.__dict__)
+    context = dialog_manager.current_context()
+    logger.info(context)
+    logger.info(context.__dict__)
+    state = context.state
+
     query = dialog_manager.dialog_data.get("search_query")
 
     async with BookUnitOfWork(async_session_maker) as uow:
@@ -140,6 +143,7 @@ async def get_list_books(dialog_manager: DialogManager, **kwargs):
 
 async def get_book(dialog_manager: DialogManager, **kwargs):
     current_user: Users | None = dialog_manager.middleware_data.get("current_user")
+    user_book = None
 
     book_id = dialog_manager.dialog_data.get("book_id")
     if book_id is None:
@@ -149,11 +153,17 @@ async def get_book(dialog_manager: DialogManager, **kwargs):
         book = await uow.book.get_by_id(book_id)
         if any([True for user in book.user_associations if current_user.id == user.user_id]):
             is_my_book = True
+            user_book = await uow.user_book.get_one_or_none(user_id=current_user.id, book_id=book_id)
+            logger.info(user_book)
+            radio = dialog_manager.find("r_reading_status")
+            if radio:
+                await radio.set_checked(user_book.status)
         else:
             is_my_book = False
 
     return {
         "book": book,
+        "user_books": user_book,
         "is_my_book": is_my_book
     }
 

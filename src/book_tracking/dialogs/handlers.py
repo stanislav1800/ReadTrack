@@ -19,6 +19,22 @@ from src.users.database.uow import UserUnitOfWork
 logger = logging.getLogger()
 
 
+async def on_book_update_status(
+    c: CallbackQuery,
+    widget: Select[Any],
+    manager: DialogManager,
+    selected_id: str,
+) -> None:
+    current_user: Users | None = manager.middleware_data.get("current_user")
+    book_id = manager.dialog_data.get("book_id")
+
+    async with BookUnitOfWork(async_session_maker) as uow:
+        user_book = await uow.user_book.get_by_filter(user_id=current_user.id, book_id=book_id, as_schema=False)   
+        await uow.user_book.update(user_book, {"status": selected_id})
+        await uow.commit()
+        await c.answer("Статус обновлён ✅")
+
+
 async def on_book_selected(
     c: CallbackQuery,
     widget: Select[Any],
@@ -26,7 +42,11 @@ async def on_book_selected(
     selected_id: str,
 ) -> None:
     manager.dialog_data["book_id"] = int(selected_id)
-    await manager.next()
+    current_state = manager.current_context().state
+    group_class = current_state.group
+    target_state = getattr(group_class, "book_detail")
+    await manager.switch_to(target_state)
+
 
 
 async def on_new_search_click(
@@ -139,13 +159,18 @@ async def on_status_toggle(
 async def on_search_success(
     message: Message,
     widget,  # ManagedTextInput
-    dialog_manager: DialogManager,
+    manager: DialogManager,
     text: str
 ):
-    m_select = dialog_manager.find("scrolling_list_books")
+    m_select = manager.find("scrolling_list_books")
     await m_select.set_page(0)
-    dialog_manager.dialog_data["search_query"] = text
-    await dialog_manager.switch_to(states.ListBooks.list_books)
+    manager.dialog_data["search_query"] = text
+
+    current_state = manager.current_context().state
+    group_class = current_state.group
+    target_state = getattr(group_class, "list_books")
+    await manager.switch_to(target_state)
+    # await dialog_manager.switch_to(states.ListBooks.list_books)
 
 async def on_cancel_filter(
     message: Message,
@@ -155,7 +180,8 @@ async def on_cancel_filter(
     m_select: ManagedScroll = dialog_manager.find("scrolling_list_books")
     await m_select.set_page(0)
     dialog_manager.dialog_data.pop("search_query", None)
-    await dialog_manager.switch_to(states.ListBooks.list_books)
+    await dialog_manager.back()
+    # await dialog_manager.switch_to(states.ListBooks.list_books)
 
 
 async def on_create_book(
@@ -265,3 +291,53 @@ async def on_error_data_not_int(
         error_: ValueError
 ):
     await message.answer("Введите число!")
+
+
+async def on_change_reading_status(
+    callback: CallbackQuery,
+    select: Any,
+    manager: DialogManager,
+    data: ValueError
+):
+    current_user: Users | None = manager.middleware_data.get("current_user")
+    book_id = manager.dialog_data.get("book_id")
+
+    async with BookUnitOfWork(async_session_maker) as uow:
+        user_book = await uow.user_book.get_one_or_none(user_id=current_user.id, book_id=book_id, as_schema=False)
+        await uow.user_book.update(user_book, status=data)
+        await uow.commit()
+        await callback.answer("Статус обновлён ✅")
+
+async def on_update_minutes_read(
+    callback: CallbackQuery,
+    widget: TextInput,
+    manager: DialogManager,
+    data,
+):
+    current_user: Users | None = manager.middleware_data.get("current_user")
+    book_id = manager.dialog_data.get("book_id")
+
+    async with BookUnitOfWork(async_session_maker) as uow:
+        user_book = await uow.user_book.get_one_or_none(user_id=current_user.id, book_id=book_id, as_schema=False)
+        await uow.user_book.update(user_book, minutes_read=int(data))
+        await uow.commit()
+
+    await manager.switch_to(states.MyBooks.book_detail)
+
+async def on_delete_my_book(
+    callback: CallbackQuery,
+    button: Button,
+    manager: DialogManager,
+):
+    current_user: Users | None = manager.middleware_data.get("current_user")
+    book_id = manager.dialog_data.get("book_id")
+
+    async with BookUnitOfWork(async_session_maker) as uow:
+        user_book = await uow.user_book.get_one_or_none(user_id=current_user.id, book_id=book_id, as_schema=False)
+        await uow.user_book.delete(user_book)
+        await uow.commit()
+        await callback.answer("Книга удалена")
+
+    await manager.reset_stack()
+    await manager.start(states.MyBooks.list_books)
+    

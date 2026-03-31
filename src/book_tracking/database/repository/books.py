@@ -19,11 +19,10 @@ class BookRepository(BaseRepository[Books, BookDetailRead]):
             selectinload(Books.add_books),
         ]
 
-    async def get_by_filter(self, **filters) -> list[Optional[T]]:
+    async def get_by_filter(self, query: Optional[str] = None, user_id: Optional[int] = None, **filters) -> list[Optional[T]]:
         where_clauses = [getattr(self.model, "status") != BookStatus.DELETED]
 
         # Специальная обработка поиска
-        query = filters.pop("query", None)  # или "q", "search" — как тебе удобнее
         if query:
             where_clauses.append(
                 or_(
@@ -40,6 +39,8 @@ class BookRepository(BaseRepository[Books, BookDetailRead]):
 
         stmt = select(self.model).where(*where_clauses).options(*self._options())  # or and_(*where_clauses)
         # можно добавить .order_by(...), limit и т.д.
+        if user_id:
+            stmt = stmt.filter(self.model.user_associations.any(user_id=user_id))
 
         result = await self.session.execute(stmt)
         books = result.scalars().all()
