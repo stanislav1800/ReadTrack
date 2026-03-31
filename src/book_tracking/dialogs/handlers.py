@@ -4,11 +4,12 @@ from typing import Any
 from aiogram.types import CallbackQuery, Message
 from aiogram_dialog import DialogManager, ShowMode
 from aiogram_dialog.widgets.input import ManagedTextInput, TextInput
+from aiogram_dialog.widgets.common.scroll import ManagedScroll
 from aiogram_dialog.widgets.kbd import Button, Select, SwitchTo, Toggle
 from sqlalchemy.exc import IntegrityError
 
 from src.book_tracking import states
-from src.book_tracking.database.models import Books, ReadingStatus, UserAddBook
+from src.book_tracking.database.models import Books, ReadingStatus, UserAddBook, UserBook
 from src.book_tracking.database.uow import BookUnitOfWork
 from src.core.commands import set_user_commands
 from src.database.engine import async_session_maker
@@ -99,59 +100,21 @@ async def on_add_to_list(
     manager: DialogManager,
 ) -> None:
     current_user: Users | None =manager.middleware_data.get("current_user")
-    book_id_str = manager.dialog_data.get("book_id")
-    if not book_id_str:
-        await callback.answer("Книга не выбрана", show_alert=True)
-        return
-
-    try:
-        book_id = int(book_id_str)
-    except ValueError:
-        logger.error(f"Некорректный book_id: {book_id_str}")
-        await callback.answer("Ошибка: неверный ID книги", show_alert=True)
-        return
-
     user_id = current_user.id
-    if not user_id:
-        await callback.answer("Не удалось определить пользователя", show_alert=True)
-        return
+    book_id = manager.dialog_data.get("book_id")
 
     async with BookUnitOfWork(async_session_maker) as uow:
-        try:
-            # Проверка на существование — защита от race condition
-            exists = await uow.user_book.get_by_filters(user_id=user_id, book_id=book_id)
-            if exists:
-                await callback.answer("Книга уже в вашем списке", show_alert=True)
-                # Сразу скрываем кнопку при повторном рендере
-                manager.dialog_data["book_added"] = True
-                await manager.update(data={"book_added": True})
-                return
+        await uow.user_book.add(
+            UserBook(
+                user_id=user_id,
+                book_id=book_id,
+                status=ReadingStatus.planned,
+                minutes_read=None
+            )
+        )
+        await uow.commit()
 
-            await uow.user_book.add({
-                "user_id": user_id,
-                "book_id": book_id,
-                "status": ReadingStatus.planned,
-                "minutes_read": None,
-            })
-            await uow.commit()
-
-            # Успех → ставим флаг и обновляем интерфейс
-            manager.dialog_data["book_added"] = True
-            await callback.answer("Книга добавлена в «Планирую прочитать»", show_alert=True)
-
-            # Перерисовываем текущее окно без кнопки
-            manager.show_mode = ShowMode.EDIT
-
-        except IntegrityError:
-            await uow.rollback()
-            await callback.answer("Книга уже добавлена", show_alert=True)
-            manager.dialog_data["book_added"] = True
-            manager.show_mode = ShowMode.EDIT
-
-        except Exception:
-            await uow.rollback()
-            logger.exception("Ошибка при добавлении книги в список")
-            await callback.answer("Произошла ошибка. Попробуйте позже", show_alert=True)
+        await callback.answer("Книга добавлена в «Планирую прочитать»", show_alert=True)
 
 
 async def on_status_toggle(
@@ -179,6 +142,8 @@ async def on_search_success(
     dialog_manager: DialogManager,
     text: str
 ):
+    m_select = dialog_manager.find("scrolling_list_books")
+    await m_select.set_page(0)
     dialog_manager.dialog_data["search_query"] = text
     await dialog_manager.switch_to(states.ListBooks.list_books)
 
@@ -187,6 +152,8 @@ async def on_cancel_filter(
     widget,
     dialog_manager: DialogManager,
 ):
+    m_select: ManagedScroll = dialog_manager.find("scrolling_list_books")
+    await m_select.set_page(0)
     dialog_manager.dialog_data.pop("search_query", None)
     await dialog_manager.switch_to(states.ListBooks.list_books)
 

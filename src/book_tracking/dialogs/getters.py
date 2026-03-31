@@ -5,6 +5,7 @@ from typing import Any
 
 from aiogram_dialog import DialogManager
 from aiogram_dialog.widgets.kbd.select import Select, Toggle
+from aiogram_dialog.widgets.common.scroll import ManagedScroll
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
@@ -39,25 +40,15 @@ async def get_my_list_books(dialog_manager: DialogManager, **kwargs) -> dict[str
 
 
 async def get_list_books(dialog_manager: DialogManager, **kwargs):
+    # m_select: ManagedScroll = dialog_manager.find("scrolling_list_books")
+    # logger.info(m_select)
+    # logger.info(m_select.__dict__)
+    # m_select.set_page()
     query = dialog_manager.dialog_data.get("search_query")
 
     async with BookUnitOfWork(async_session_maker) as uow:
         books = await uow.book.get_by_filter(query=query)
 
-    #     books_data = [
-    #         {
-    #             "id": book.id,
-    #             "title": book.title,
-    #             "author": book.author,
-    #             "description": book.description,
-    #             "published_year": book.published_year,
-    #             "minutes_read": book.minutes_read,
-    #             "status": book.status.value if hasattr(book.status, "value") else book.status  # если Enum
-    #         }
-    #         for book in books
-    #     ]
-
-    # return {"books": books_data}
     return {"books": books}
 
 
@@ -156,8 +147,7 @@ async def get_book(dialog_manager: DialogManager, **kwargs):
 
     async with BookUnitOfWork(async_session_maker) as uow:
         book = await uow.book.get_by_id(book_id)
-
-        if current_user.id in [user.id for user in book.user_associations]:
+        if any([True for user in book.user_associations if current_user.id == user.user_id]):
             is_my_book = True
         else:
             is_my_book = False

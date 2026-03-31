@@ -80,13 +80,13 @@ list_books_dialog = Dialog(
                 when=lambda data, widget, manager: data["current_page"] > 0,
             ),
             SwitchTo(Const("🔎"), id="search", state=states.ListBooks.search_books),
-            Cancel(Const("Отмена")),
             NextPage(
                 scroll="scrolling_list_books",
                 text=Const(">>"),
                 when=lambda data, widget, manager: data["current_page"] < data["pages"] - 1,
             ),
         ),
+        Cancel(Const("Отмена")),
         getter=get_list_books,
         state=states.ListBooks.list_books
     ),
@@ -114,10 +114,9 @@ list_books_dialog = Dialog(
 {% endfor %}
 {% else %}Не указано{% endif %}
         """),
-        Row(
+        Column(
             Button(Const("Добавить в список"), id="add_to_list", on_click=on_add_to_list, when=~F["is_my_book"]),
             Button(Const("Перейти к книге"), id="start_book_detail", on_click=on_start_book_detail, when=F["is_my_book"]),
-            # Start(Const("Перейти к книге"), id="find_more", state=states.MyBooks.book_detail, when=F["is_my_book"]),
             SwitchTo(Const("Назад"), id="back", state=states.ListBooks.list_books),
         ),
         getter=get_book,
