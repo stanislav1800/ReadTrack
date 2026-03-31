@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Integer, String, Table, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.config import settings
@@ -15,10 +15,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+book_tag = Table(
+    "book_tag",
+    Base.metadata,
+    Column("book_id", ForeignKey("books.id"), primary_key=True),
+    Column("tag_id", ForeignKey("tag.id"), primary_key=True),
+)
+
 class ReadingStatus(enum.Enum):
     planned = "planned"
     reading = "reading"
     read = "read"
+
+class BookStatus(enum.Enum):
+    UNVERIFIED = "unverified"
+    VERIFIED = "verified"
+    DELETED = "deleted"
 
 
 class Books(Base):
@@ -47,6 +59,12 @@ class Books(Base):
         Integer,
         comment="Сколько минут/времени предварительно займет прочтение",
     )
+    status: Mapped[str] = mapped_column(
+        Enum(BookStatus), 
+        default=BookStatus.UNVERIFIED, 
+        nullable=True,
+        comment="Статус книги",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -59,8 +77,9 @@ class Books(Base):
         "UserBook", 
         back_populates="book"
     )
-    tags: Mapped[list["BookTag"]] = relationship(
-        "BookTag", 
+    tags = relationship("Tag", secondary=book_tag)
+    add_books: Mapped[list["UserAddBook"]] = relationship(
+        "UserAddBook", 
         back_populates="book"
     )
 
@@ -108,6 +127,33 @@ class UserBook(Base):
     user: Mapped["Users"] = relationship("Users", back_populates="books")
     book: Mapped["Books"] = relationship("Books", back_populates="user_associations")
 
+
+class UserAddBook(Base):
+    __tablename__ = "user_add_book"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, 
+        ForeignKey("users.id"), 
+        nullable=False,
+        comment="Пользователь",
+    )
+    book_id: Mapped[int] = mapped_column(
+        Integer, 
+        ForeignKey("books.id"), 
+        nullable=False,
+        comment="Книга",
+    )
+    created_at: Mapped[int] = mapped_column(
+        DateTime(timezone=True), 
+        server_default=func.now(),
+        nullable=False,
+        comment="Дата добавления книги в список книг",
+    )
+
+    user: Mapped["Users"] = relationship("Users", back_populates="add_books")
+    book: Mapped["Books"] = relationship("Books", back_populates="add_books")
+
 class Tag(Base):
     __tablename__ = "tag"
 
@@ -122,26 +168,24 @@ class Tag(Base):
         comment="Описание тега",
     )
 
-    book_associations: Mapped[list["BookTag"]] = relationship(
-        "BookTag", back_populates="tag"
-    )
+    books = relationship("Books", secondary=book_tag)
 
-class BookTag(Base):
-    __tablename__ = "book_tag"
+# class BookTag(Base):
+#     __tablename__ = "book_tag"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    book_id: Mapped[int] = mapped_column(
-        Integer, 
-        ForeignKey("books.id"), 
-        nullable=False,
-        comment="tag",
-    )
-    tag_id: Mapped[int] = mapped_column(
-        Integer, 
-        ForeignKey("tag.id"), 
-        nullable=False,
-        comment="Ссылка на тег",
-    )
+#     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+#     book_id: Mapped[int] = mapped_column(
+#         Integer, 
+#         ForeignKey("books.id"), 
+#         nullable=False,
+#         comment="tag",
+#     )
+#     tag_id: Mapped[int] = mapped_column(
+#         Integer, 
+#         ForeignKey("tag.id"), 
+#         nullable=False,
+#         comment="Ссылка на тег",
+#     )
 
-    book: Mapped["Books"] = relationship("Books", back_populates="tags")
-    tag: Mapped["Tag"] = relationship("Tag", back_populates="book_associations")
+#     book: Mapped["Books"] = relationship("Books", back_populates="tags")
+#     tag: Mapped["Tag"] = relationship("Tag", back_populates="book_associations")

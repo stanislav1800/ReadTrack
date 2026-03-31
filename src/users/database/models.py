@@ -9,7 +9,7 @@ from src.core.config import settings
 from src.database.base import Base
 
 if TYPE_CHECKING:
-    from src.book_tracking.database.models import UserBook
+    from src.book_tracking.database.models import UserBook, UserAddBook
 
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,10 @@ class Users(Base):
 
     books: Mapped[list["UserBook"]] = relationship(
         "UserBook", back_populates="user"
+    )
+    add_books: Mapped[list["UserAddBook"]] = relationship(
+        "UserAddBook", 
+        back_populates="user"
     )
 
     def __str__(self):
