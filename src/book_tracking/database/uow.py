@@ -2,7 +2,7 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.book_tracking.database.repository import book_tag, books, tag, user_book
+from src.book_tracking.database import repository
 from src.database.unit_of_work import AbstractUnitOfWork
 
 
@@ -15,10 +15,10 @@ class BookUnitOfWork(AbstractUnitOfWork):
 
     async def __aenter__(self) -> Self:
         self._session = self._session_factory()
-        self.books = books.BookRepository(self._session)
-        self.tag = tag.TagRepository(self._session)
-        self.user_book = user_book.UserBookRepository(self._session)
-        self.book_tag = book_tag.BookTagRepository(self._session)
+        self.book = repository.BookRepository(self._session)
+        self.tag = repository.TagRepository(self._session)
+        self.user_add_book = repository.UserAddBookRepository(self._session)
+        self.user_book = repository.UserBookRepository(self._session)
         return self
 
     async def __aexit__(self, *args):
