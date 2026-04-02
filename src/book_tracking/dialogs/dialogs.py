@@ -33,6 +33,8 @@ from .getters import (
     get_my_list_books,
     get_tags_for_m_select,
     get_book_pre_create,
+    find_books_for_ii,
+    get_ai_search_book_detail,
 )
 from .handlers import (
     on_add_to_list,
@@ -51,22 +53,27 @@ from .handlers import (
     on_change_reading_status,
     on_update_minutes_read,
     on_delete_my_book,
+    on_ai_book_selected,
+    on_ai_save_book,
+    on_ai_search_new_query,
+    on_ai_search_more,
+    on_ai_search,
 )
 
 main = Dialog(
     Window(
-        Const("Вот что я могу предложить"),
+        Const("Вот что я могу предложить ...................................................................."),
         Start(Const("Отслеживаемые книги"), id="start_my_books", state=states.MyBooks.list_books),
-        Start(Const("Просмотреть список книг"), id="start_list_books", state=states.ListBooks.list_books),
+        Start(Const("Просмотреть список всех книг"), id="start_list_books", state=states.ListBooks.list_books),
         Start(Const("Добавить новую книгу"), id="start_add_book", state=states.CreateBook.title),
-        # Start(Const("Поиск книг с помощью ИИ"), id="start_ii_search", state=states.SearchBooks.input_request),
+        Start(Const("Поиск книг с помощью ИИ"), id="start_ii_search", state=states.AISearchBooks.input_request),
         state=states.ReadTracker.main
     )
 )
 
 list_books_dialog = Dialog(
     Window(
-        Const("Выберите интересующую вас литературу"),
+        Const("Выберите интересующую вас литературу ............................................................."),
         ScrollingGroup(
             Select(
                 Format("{item.author} - {item.title}"),
@@ -173,7 +180,7 @@ create_book_dialog = Dialog(
         state=states.CreateBook.minutes_read,
     ),
     Window(
-        Const("Выберите теги для книги:"),
+        Const("Выберите теги для книги ...................................................................."),
         ScrollingGroup(
             Multiselect(
                 checked_text=Format("✅ {item.name}"),
@@ -236,77 +243,6 @@ create_book_dialog = Dialog(
         parse_mode="html",
     )
 )
-
-
-
-# search_book = Dialog(
-#     Window(
-#         Const("Опиши книгу, которую хочешь найти(напишите название книги или автора, или опишите книгу):"),
-#         TextInput("search_book", on_success=Next()),
-#         state=states.SearchBooks.input_request,
-#     ),
-#     Window(
-#         Const("Выберите интересующую вас литературу"),
-#         ScrollingGroup(
-#             Select(
-#                 Format("{item.author} - {item.title}"),
-#                 id="s_book_id",
-#                 item_id_getter=lambda x: x.id,
-#                 items="books",
-#                 on_click=on_book_selected,
-#             ),
-#             id="scrolling_list_books",
-#             width=1,
-#             height=5,
-#             hide_pager=True,
-#         ),
-#         Row(
-#             PrevPage(
-#                 scroll="scrolling_list_books",
-#                 text=Const("<<"),
-#                 when=lambda data, widget, manager: data["current_page"] > 0,
-#             ),
-#             NextPage(
-#                 scroll="scrolling_list_books",
-#                 text=Const(">>"),
-#                 when=lambda data, widget, manager: data["current_page"] < data["pages"] - 1,
-#             ),
-#         ),
-#         Column(
-#             SwitchTo(Const("Найти еще"), id="search", state=states.SearchBooks.list_books, on_click=on_find_more_click),
-#             SwitchTo(Const("Найти другое"), id="new_search", state=states.SearchBooks.input_request, on_click=on_new_search_click),
-#             Cancel(Const("Выйти в главное меню")),
-#         ),
-#         state=states.SearchBooks.list_books,
-#         getter=get_list_books,
-#     ),
-#     Window(
-#         Jinja(
-#             """
-# 📚 <b>{{ book.title }}</b>
-
-# 👤 <b>Автор:</b> {{ book.author }}
-# 📅 <b>Год публикации:</b> {{ book.published_year }}
-
-# 📝 <b>Описание:</b>
-# {{ book.description }}
-
-# ⏱ <b>Время чтения:</b>
-# {% if book.minutes_read %}
-#     {{ book.minutes_read }} мин.
-# {% else %}
-#     Пока не указано
-# {% endif %}
-# """
-#         ),
-#         Button(Const("Добавить в свой список"), id="add_to_list", on_click=on_add_to_list, when=~F["dialog_data"]["book_added"]),
-#         Back(Const("Назад")),
-#         Cancel(Const("Выйти в главное меню")),
-#         state=states.SearchBooks.book_detail,
-#         getter=get_book,
-#         parse_mode="html",
-#     )
-# )
 
 
 my_books_dialog = Dialog(
@@ -401,9 +337,94 @@ my_books_dialog = Dialog(
 )
 
 
+search_book_for_ii_dialog = Dialog(
+    Window(
+        Const("Опиши книгу, которую хочешь найти (название, автор или описание):"),
+        TextInput("search_book", on_success=on_ai_search),
+        Cancel(Const("Отмена")),
+        state=states.AISearchBooks.input_request,
+    ),
+    Window(
+        Jinja("""
+<b>Результаты поиска:</b>
+{% if error %}
+{{ error }}
+{% endif %}
+{% if books %}
+Найдено {{ books|length }} книг. Выберите интересующую вас литературу:
+{% else %}
+{% if not error %}Книги не найдены{% endif %}
+{% endif %}
+        """),
+        ScrollingGroup(
+            Select(
+                Format("{item.author} - {item.title}"),
+                id="s_book_id",
+                item_id_getter=lambda x: str(hash(x.title + x.author) % 1000000),
+                items="books",
+                on_click=on_ai_book_selected,
+            ),
+            id="scrolling_ai_books",
+            width=1,
+            height=5,
+            hide_pager=True,
+        ),
+        Row(
+            PrevPage(
+                scroll="scrolling_ai_books",
+                text=Const("<<"),
+                when=lambda data, widget, manager: data.get("current_page", 0) > 0,
+            ),
+            SwitchTo(Const("Найти еще"), id="find_more", state=states.AISearchBooks.list_books, on_click=on_ai_search_more, when=~F["error"]),
+            SwitchTo(Const("Найти другое"), id="new_search", state=states.AISearchBooks.input_request, on_click=on_ai_search_new_query),
+            NextPage(
+                scroll="scrolling_ai_books",
+                text=Const(">>"),
+                when=lambda data, widget, manager: data.get("current_page", 0) < data.get("pages", 1) - 1,
+            ),
+        ),
+        Cancel(Const("Выйти в главное меню")),
+        state=states.AISearchBooks.list_books,
+        getter=find_books_for_ii,
+        parse_mode="html",
+    ),
+    Window(
+        Jinja("""
+📚 <b>{{ book.title }}</b>
+
+👤 <b>Автор:</b> {{ book.author }}
+📅 <b>Год публикации:</b> {% if book.published_year %}{{ book.published_year }}{% else %}Не указано{% endif %}
+
+📝 <b>Описание:</b>
+{{ book.description }}
+
+⏱ <b>Время чтения:</b>
+{% if book.estimated_minutes_read %}
+    {{ book.estimated_minutes_read }} мин.
+{% else %}
+    Не указано
+{% endif %}
+
+<b>Тэги:</b>
+{% if book.tags %}
+{% for tag in book.tags %}
+- {{ tag }}
+{% endfor %}
+{% else %}Не указано{% endif %}
+        """),
+        Button(Const("Добавить в мой список"), id="save_book", on_click=on_ai_save_book),
+        Back(Const("Назад")),
+        state=states.AISearchBooks.book_detail,
+        getter=get_ai_search_book_detail,
+        parse_mode="html",
+    )
+)
+
+
 router = Router(name=__name__)
 
 router.include_router(main)
 router.include_router(list_books_dialog)
 router.include_router(create_book_dialog)
 router.include_router(my_books_dialog)
+router.include_router(search_book_for_ii_dialog)

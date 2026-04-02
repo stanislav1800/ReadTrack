@@ -1,8 +1,8 @@
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
 
+from aiogram import Bot
 from aiogram_dialog import DialogManager
 from aiogram_dialog.widgets.kbd.select import Select, Toggle
 from aiogram_dialog.widgets.common.scroll import ManagedScroll
@@ -17,7 +17,6 @@ from src.integration.infrastructure.book_search.book_finder_openai import (
     BookSearchResponse,
     BookSearchResult,
     find_books,
-    find_books_async,
 )
 from src.users.database.models import Users
 
@@ -248,3 +247,89 @@ async def get_book_pre_create(dialog_manager: DialogManager, **kwargs):
                 "tags": tags_data
                 }
             }
+
+
+async def find_books_for_ii(dialog_manager: DialogManager,event_from_user, **kwargs):
+    search_query = dialog_manager.find("search_book").get_value()
+    
+    excluded_books = dialog_manager.dialog_data.get("excluded_books", [])
+    cached_query = dialog_manager.dialog_data.get("ii_search_query")
+    cached_results = dialog_manager.dialog_data.get("ii_search_results")
+    cached_error = dialog_manager.dialog_data.get("ii_search_error")
+
+    bot: Bot = dialog_manager.middleware_data.get("bot")
+    user_id = event_from_user.id
+    
+    if cached_query == search_query:
+        if cached_results is not None:
+            logger.info(f"Используем кэшированные результаты для запроса '{search_query}': {len(cached_results)} книг")
+            books = [BookSearchResult(**book) for book in cached_results]
+            return {"books": books, "error": None}
+    
+        if cached_error is not None:
+            logger.info(f"Возвращаем кэшированную ошибку для запроса '{search_query}'")        
+            return {"books": [], "error": cached_error}
+    
+    status_msg = await bot.send_message(user_id, "🔍 Ищу книги... Это может занять некоторое время...")
+
+    search_results = None
+    user_error = None
+
+    try:
+        logger.info(f"Делаем новый поиск для запроса: '{search_query}'")
+        
+        book_search_results: BookSearchResponse = await find_books(
+            search_query,
+            excluded_books=excluded_books
+        )
+        search_results = book_search_results.books
+        logger.info(f"Найдено {len(search_results)} книг, сохранили в кэш")
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"API search failed: {type(e).__name__}: {error_msg}", exc_info=True)
+        
+        if "rate_limit" in error_msg.lower() or "429" in error_msg:
+            user_error = "⚠️ Лимит запросов превышен. Попробуйте позже."
+        elif "api" in error_msg.lower() or "key" in error_msg.lower():
+            user_error = "⚠️ Ошибка при подключении к сервису поиска книг. Попробуйте позже."
+        elif "timeout" in error_msg.lower():
+            user_error = "⚠️ Превышено время ожидания ответа. Попробуйте ещё раз."
+        elif "неполный ответ" in error_msg.lower() or "обрезан" in error_msg.lower():
+            user_error = "⚠️ Ответ был слишком длинный. Попробуйте переформулировать запрос короче или конкретнее."
+        elif "json" in error_msg.lower():
+            user_error = "⚠️ Ошибка при обработке ответа. Попробуйте ещё раз."
+        else:
+            user_error = f"⚠️ Ошибка при поиске. Попробуйте позже."
+
+    finally:
+        try:
+            await bot.delete_message(user_id, status_msg.message_id)
+        except Exception as delete_error:
+            logger.debug(f"Не удалось удалить сообщение о поиске: {delete_error}")
+
+        books_as_dicts = None
+        if search_results:
+            books_as_dicts = [book.model_dump() for book in search_results]
+
+        dialog_manager.dialog_data["ii_search_query"] = search_query
+        dialog_manager.dialog_data["ii_search_results"] = books_as_dicts
+        dialog_manager.dialog_data["ii_search_error"] = user_error
+        
+        return {"books": search_results or [], "error": user_error}
+
+
+async def get_ai_search_book_detail(dialog_manager: DialogManager, **kwargs):
+    """Получить детали найденной книги из кэша"""
+    book_index = dialog_manager.dialog_data.get("ai_book_index")
+    cached_results = dialog_manager.dialog_data.get("ii_search_results", [])
+    
+    if book_index is not None and 0 <= book_index < len(cached_results):
+        # Преобразуем словарь в BookSearchResult объект
+        book_dict = cached_results[book_index]
+        book = BookSearchResult(**book_dict) if isinstance(book_dict, dict) else book_dict
+        logger.info(f"Получаем детали книги с индексом {book_index}")
+        return {"book": book}
+    
+    logger.warning(f"Не удалось получить книгу с индексом {book_index}")
+    return {"book": None}

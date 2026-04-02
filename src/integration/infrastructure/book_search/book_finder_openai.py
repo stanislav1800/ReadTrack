@@ -1,46 +1,58 @@
 import asyncio
+import json
 import logging
 from typing import Optional
 
-import httpx
-from openai import OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from src.core.config import settings
+
 
 logger = logging.getLogger()
 
 SYSTEM_PROMPT_TEMPLATE = """ВАЖНО: Весь твой ответ должен быть ТОЛЬКО на русском языке.
 Все объяснения, описания, теги — исключительно на русском.
-Ты — эксперт по мировой литературе.
-Пользователь ищет книгу(и) по названию, автору или описанию.
+Ты — эксперт по литературе. Отвечай строго JSON-объектом формата {"books": [...]} без пояснений.
 
-Правила:
-- Только реальные книги, никогда не выдумывай и не придумывай несуществующие произведения.
-- Выводи **все** книги, которые реально и сильно соответствуют запросу. Не добавляй книги «ради количества», «похожести» или «на всякий случай».
-- Если запрос касается конкретной книги, которая является частью серии — обязательно включи все основные книги этой серии (трилогию, тетралогию, продолжения, приквелы в хронологическом порядке издания), но только если они действительно связаны и соответствуют запросу.
-- Не включай спин-оффы, фанфики, адаптации, книги «в похожем стиле» или «рекомендации», если они явно не запрашивались.
-- Если подходящих книг очень много — выводи только самые релевантные (до 10–12 максимум), но старайся не обрезать искусственно, если их меньше.
-- Год — год первого издания (можно приблизительно, но указывай источник приблизительности, если не уверен на 100%).
-- estimated_minutes_read — разумная оценка на основе ~250 слов в минуту и среднего объёма книги.
-- tags — от 3 до 12 тегов на русском языке, только те, которые действительно характеризуют книгу.
-- Сортируй строго от самого подходящего к менее подходящему по степени соответствия запросу.
+Жёсткие правила:
+- Только реальные книги. Ничего не выдумывай.
+- Если запрос бессмысленный/мусорный/не про книги — верни {"books": []}.
+- Если релевантных книг нет — верни {"books": []}.
+- Не подставляй «классику по умолчанию».
+- Включай только книги, которые прямо соответствуют запросу.
+- Сортируй от наиболее релевантной к менее релевантной.
+- Описание очень короткое: 1–2 предложения.
+- Теги: 3–6 коротких тегов.
 
-Не ограничивай себя заранее заданным числом книг — выводи столько, сколько реально подходит под критерии выше."""
+Если есть риск длинного ответа — верни только ту часть списка, которая помещается, и выставь has_more=true.
+Формат ответа: {"books": [...], "has_more": true|false}."""
 
 USER_PROMPT_TEMPLATE = """Запрос: {query}
 
 ВАЖНО: Ответ должен быть полностью на русском языке.
 Даже если название книги на другом языке — описания, объяснения и теги должны быть на русском.
 
-Верни список **всех** подходящих книг по правилам выше.
-Если книг нет или подходят только 1–2 — так и напиши, не придумывай дополнительные."""
+Если запрос бессмысленный (случайные символы, нечитаемый текст, не связан с книгами) — верни {{"books": []}}.
+Если ничего не подходит — верни {{"books": []}}.
+Найди ВСЕ подходящие книги, но верни только ту часть, которая помещается в текущий ответ.
+Если не все книги поместились, поставь has_more=true, иначе has_more=false.
+Обязательно соблюдай формат каждой книги: title, author, description, published_year, estimated_minutes_read, tags."""
+
+COMPACT_USER_PROMPT_SUFFIX = """
+Режим сжатия: сократи description до 1 короткого предложения и tags до 2–4, чтобы JSON точно поместился.
+"""
+
+MODEL = "arcee-ai/trinity-large-preview:free"
+MAX_TOKENS = 2500
+MAX_TOKENS_FALLBACK = 1200
+MAX_ITERATIONS = 8
 
 class BookSearchResult(BaseModel):
     """Точная структура, которая будет возвращаться из LLM"""
     title: str = Field(..., description="Название книги")
     author: str = Field(..., description="Автор книги")
-    description: str = Field(..., description="Краткое описание 2–4 предложения")
+    description: Optional[str] = Field(None, description="Краткое описание 2–4 предложения")
     published_year: Optional[int] = Field(None, description="Год первого издания")
     estimated_minutes_read: Optional[int] = Field(
         None, description="Примерное время чтения в минутах (средняя скорость ~250 слов/мин)"
@@ -56,7 +68,7 @@ class BookSearchResponse(BaseModel):
     books: list[BookSearchResult]
 
 
-def find_books(
+async def find_books(
     query: str,
     excluded_books: list[str] | None = None,
     model: Optional[str] = None,
@@ -67,119 +79,117 @@ def find_books(
     Находит реальные книги, максимально похожие на описание.
     """
     if model is None:
-        model = settings.model
+        model = MODEL
+        
     if not api_key:
         api_key = settings.open_api_key
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
+    client = AsyncOpenAI(
         api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         default_headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
     )
 
-    system_prompt = SYSTEM_PROMPT_TEMPLATE
-    user_prompt = USER_PROMPT_TEMPLATE.format(query=query)
-    if excluded_books:
-        excluded_text = "\n".join([f"- {ex.replace('|', ' — ')}" for ex in excluded_books])
-        user_prompt += f"\n\nИСКЛЮЧИ ЭТИ КНИГИ (не повторяй их ни в коем случае):\n{excluded_text}"
+    def _build_user_prompt(excluded: list[str], compact: bool = False) -> str:
+        prompt = USER_PROMPT_TEMPLATE.format(query=query)
+        if excluded:
+            excluded_text = ", ".join(excluded)
+            prompt += f"\n\nИСКЛЮЧИ ЭТИ КНИГИ (не повторяй их ни в коем случае):\n{excluded_text}"
+        if compact:
+            prompt += COMPACT_USER_PROMPT_SUFFIX
+        return prompt
 
-    try:
-        response = client.beta.chat.completions.parse(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=temperature,
-            max_tokens=2500,
-            response_format=BookSearchResponse
-        )
+    all_books: list[BookSearchResult] = []
+    seen: set[tuple[str, str]] = set()
+    running_excluded = list(excluded_books or [])
 
-        parsed: BookSearchResponse = response.choices[0].message.parsed
-        return parsed
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        logger.info(f"Book search iteration: {iteration}")
+        system_prompt = SYSTEM_PROMPT_TEMPLATE
+        user_prompt = _build_user_prompt(running_excluded, compact=False)
 
-    except Exception as e:
-        print(f"Ошибка при работе с OpenAI: {type(e).__name__}: {e}")
-        return []
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=temperature,
+                max_tokens=MAX_TOKENS,
+                response_format={"type": "json_object"}
+            )
+            logger.info(f"Response: {response}")
 
-async def find_books_async(
-    query: str,
-    lang: str = "ru",
-    count: int = 7,
-    model: str = "arcee-ai/trinity-large-preview:free",
-    api_key: Optional[str] = None,
-    temperature: float = 0.65
-) -> BookSearchResponse:
-    """
-    Асинхронный поиск книг через OpenAI API.
-    """
-    if not api_key:
-        api_key = settings.open_api_key
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY не найден")
+            if response.choices[0].finish_reason == "length":
+                logger.warning("Ответ обрезан, повторяем итерацию в сжатом режиме")
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": _build_user_prompt(running_excluded, compact=True)}
+                    ],
+                    temperature=0.3,
+                    max_tokens=MAX_TOKENS_FALLBACK,
+                    response_format={"type": "json_object"}
+                )
+                logger.info(f"Response: {response}")
 
-    system_prompt = SYSTEM_PROMPT_TEMPLATE
-    user_prompt = USER_PROMPT_TEMPLATE.format(query=query)
+                if response.choices[0].finish_reason == "length":
+                    logger.warning("Сжатый ответ тоже обрезан; возвращаем уже собранные книги")
+                    break
 
-    schema = BookSearchResponse.model_json_schema()
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "BookSearchResponse",
-                "strict": True,
-                "schema": schema,
-            }
-        },
-        "plugins": [
-            {"id": "response-healing"}  # исправление JSON
-        ],
-        "temperature": temperature,
-        "max_tokens": 2500,
-        # если используешь parse с pydantic, можно потом делать json.loads
-    }
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            parsed_chunk = BookSearchResponse(**{"books": data.get("books", [])})
+            has_more = bool(data.get("has_more", False))
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+            new_count = 0
+            for book in parsed_chunk.books:
+                key = (book.title.strip().lower(), book.author.strip().lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                all_books.append(book)
+                running_excluded.append(f"{book.title}|{book.author}")
+                new_count += 1
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post(url, json=payload, headers=headers)
-        r.raise_for_status()
-        data = r.json()
+            logger.info(f"Итерация {iteration}: получено новых книг {new_count}, всего {len(all_books)}")
 
-    # Получаем текст ответа от LLM
-    text_response = data["choices"][0]["message"]["content"]
+            if not has_more:
+                break
+            if new_count == 0:
+                logger.warning("Модель не вернула новых книг при has_more=true; завершаем, чтобы не зациклиться")
+                break
+            break
 
-    # Преобразуем в BookSearchResponse (здесь можно использовать Pydantic через parse_raw)
-    try:
-        return BookSearchResponse.model_validate_json(text_response)
-    except Exception as e:
-        print(f"Ошибка парсинга ответа LLM: {e}")
-        return BookSearchResponse(books=[])
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error on iteration {iteration}: {e}")
+            if all_books:
+                break
+            raise ValueError(f"API вернул неправильный JSON: {e}")
+        except Exception as e:
+            logger.error(f"API error on iteration {iteration}: {type(e).__name__}: {e}", exc_info=True)
+            if all_books:
+                break
+            raise
+
+    return BookSearchResponse(books=all_books)
+
 
 
 if __name__ == "__main__":
-    # asyncio.run(test())
-
     # query = input("Опиши книгу, которую хочешь найти:\n> ").strip()
     query = "бегущий в лабиринте"
 
     if query:
-        results = find_books(
+        results = asyncio.run(find_books(
             query=query,
             temperature=0.6,
-        )
+        ))
 
         print("\n" + "═" * 70 + "\nНайденные книги:\n")
 
